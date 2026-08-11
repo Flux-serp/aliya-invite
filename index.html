@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Алия — 35 лет | Приглашение (v2.0)</title>
 <meta name="description" content="Приглашение на юбилей — Алия, 35 лет">
-<meta name="robots" content="noindex, nofollow">
+
 <!--
   ===========================================================================
   ВЕРСИЯ 2.0 — эта копия НЕ заменяет index.html, а дополняет его.
@@ -444,6 +444,30 @@
   .send-hint{font-size:13.5px;color:#9a7d75;margin:10px 0 0;}
   .send-status{font-size:14px;color:var(--wine-2);margin:12px 0 0;min-height:18px;}
 
+  .rsvp-done-primary{
+    text-align:center;
+    font-family:'Playfair Display', serif;
+    font-size:17.5px;
+    line-height:1.5;
+    color:var(--wine-2);
+    margin:0 0 14px;
+  }
+  .rsvp-done-primary strong{color:var(--wine-1);font-weight:600;}
+  .rsvp-done-drink{
+    display:inline-block;
+    font-family:'Cormorant Garamond', serif;
+    font-size:15.5px;
+    color:var(--ink-soft);
+    margin-top:2px;
+  }
+  .rsvp-done-secondary{
+    text-align:center;
+    font-size:14.5px;
+    color:var(--ink-soft);
+    margin:0;
+    line-height:1.5;
+  }
+
   .footer{text-align:center;padding-top:10px;}
   .footer .from{font-size:15px;letter-spacing:2px;text-transform:uppercase;color:var(--ink-soft);font-family:'Playfair Display', serif;}
   .footer .sig{font-family:'Marck Script', cursive;font-size:56px;line-height:1.2;color:var(--wine-1);margin-top:0;}
@@ -603,6 +627,7 @@
         </div>
       </section>
 
+      <div id="rsvpFlow">
       <!-- RSVP -->
       <section class="card">
         <div class="envelope-row">
@@ -612,7 +637,7 @@
 
         <p class="rsvp-question">СМОЖЕТЕ ЛИ ВЫ ПРИСУТСТВОВАТЬ?</p>
 
-        <input class="name-field" id="guestName" type="text" placeholder="Ваше имя (чтобы я знала, кто ответил)">
+        <input class="name-field" id="guestName" type="text" placeholder="Имя и фамилия" autocomplete="name" required>
 
         <div class="rsvp-buttons">
           <button class="btn yes-btn" id="yesBtn" type="button" aria-pressed="false">Да, с удовольствием ♡</button>
@@ -653,6 +678,9 @@
         <p class="send-hint" id="sendHint">Ответ добавится в общий список гостей</p>
         <p class="send-status" id="sendStatus"></p>
       </div>
+      </div><!-- /#rsvpFlow -->
+
+      <div id="rsvpDone" hidden></div>
 
       <div class="footer">
         <p class="from">С любовью,</p>
@@ -721,9 +749,17 @@
   let attending = null;   // true | false
   let drink = null;
 
-  function updateSendState(){
-    sendBtn.disabled = attending === null;
+  const nameInput = document.getElementById('guestName');
+
+  function nameIsFilled(){
+    return nameInput.value.trim().length > 0;
   }
+
+  function updateSendState(){
+    sendBtn.disabled = attending === null || !nameIsFilled();
+  }
+
+  nameInput.addEventListener('input', updateSendState);
 
   yesBtn.addEventListener('click', () => {
     attending = true;
@@ -756,6 +792,42 @@
     });
   });
 
+  /* ---------- "already responded" state (защита от дублей) ---------- */
+  // Флаг живёт в localStorage браузера. При повторном открытии страницы
+  // с того же браузера — форма сразу заменяется на карточку "ответ отправлен",
+  // без возможности переотправить. Изменить ответ можно только через координатора.
+  // Ограничение: другой браузер/устройство/режим инкогнито этот флаг не увидят.
+  const STORAGE_KEY = 'aliya35_rsvp_v1';
+  const rsvpFlow = document.getElementById('rsvpFlow');
+  const rsvpDone = document.getElementById('rsvpDone');
+
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
+  }
+
+  function showAlreadyResponded(rec){
+    const attendText = rec.attending ? 'приду' : 'к сожалению, не смогу прийти';
+    const drinkLine = (rec.attending && rec.drink)
+      ? '<br><span class="rsvp-done-drink">Напиток: ' + escapeHtml(rec.drink) + '</span>'
+      : '';
+    const coord = CONFIG.coordinatorName + (CONFIG.coordinatorPhone ? ' (' + escapeHtml(CONFIG.coordinatorPhone) + ')' : '');
+    rsvpDone.innerHTML =
+      '<section class="card">' +
+        '<p class="card-title"><span class="rule"></span>Ваш ответ отправлен<span class="rule"></span></p>' +
+        '<p class="rsvp-done-primary"><strong>' + escapeHtml(rec.name) + '</strong> — ' + attendText + drinkLine + '</p>' +
+        '<p class="rsvp-done-secondary">Спасибо! Если нужно что-то изменить — напишите координатору: <strong>' + escapeHtml(coord) + '</strong>.</p>' +
+      '</section>';
+    rsvpFlow.hidden = true;
+    rsvpDone.hidden = false;
+  }
+
+  // При загрузке — если этот браузер уже отправлял, сразу показываем "готово".
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
+    if(saved && saved.name){ showAlreadyResponded(saved); }
+  } catch(e){}
+
+  /* ---------- Отправка ---------- */
   sendBtn.addEventListener('click', () => {
     const gf = CONFIG.googleForm;
     if(!gf.formId || !gf.entryGuestName || !gf.entryAttending){
@@ -763,7 +835,16 @@
       return;
     }
 
-    const guestName = document.getElementById('guestName').value.trim();
+    const guestName = nameInput.value.trim();
+    if(!guestName){
+      sendStatus.textContent = 'Пожалуйста, укажите имя и фамилию.';
+      nameInput.focus();
+      return;
+    }
+    if(attending === null){
+      sendStatus.textContent = 'Выберите вариант ответа.';
+      return;
+    }
 
     const formData = new FormData();
     formData.append(gf.entryGuestName, guestName);
@@ -775,18 +856,23 @@
     sendBtn.disabled = true;
     sendStatus.textContent = 'Отправляем…';
 
-    // mode:'no-cors' — Google Forms не отдаёт CORS-заголовки; мы не увидим
-    // ответ сервера, но сама запись пройдёт. Проверить успех можно только
-    // взглядом в связанную Google-таблицу.
+    // mode:'no-cors' — Google Forms не отдаёт CORS-заголовки; мы не видим
+    // ответ сервера, но запись проходит. Проверять успех — глазами в таблицу.
     fetch('https://docs.google.com/forms/d/e/' + gf.formId + '/formResponse', {
       method: 'POST',
       mode: 'no-cors',
       body: formData
     }).then(() => {
-      sendStatus.textContent = 'Спасибо! Ваш ответ добавлен в список гостей.';
+      const record = {
+        name: guestName,
+        attending: attending,
+        drink: attending ? (drink || null) : null,
+        when: new Date().toISOString(),
+      };
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(record)); } catch(e){}
+      showAlreadyResponded(record);
     }).catch(() => {
       sendStatus.textContent = 'Не получилось отправить ответ. Проверьте соединение и попробуйте ещё раз.';
-    }).finally(() => {
       sendBtn.disabled = false;
     });
   });
